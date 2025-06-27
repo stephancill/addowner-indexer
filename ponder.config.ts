@@ -13,7 +13,7 @@ export default createConfig({
     CoinbaseSmartWallet: {
       abi: CoinbaseSmartWalletAbi,
       chain: "base",
-      startBlock: 32031000,
+      startBlock: 32002100,
       filter: {
         event: "AddOwner",
         args: {},
