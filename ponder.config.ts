@@ -1,20 +1,23 @@
 import { createConfig } from "ponder";
 
-import { ExampleContractAbi } from "./abis/ExampleContractAbi";
+import { CoinbaseSmartWalletAbi } from "./abis/CoinbaseSmartWalletAbi";
 
 export default createConfig({
   chains: {
-    mainnet: {
-      id: 1,
-      rpc: process.env.PONDER_RPC_URL_1!,
+    base: {
+      id: 8453,
+      rpc: process.env.PONDER_RPC_URL_8453!,
     },
   },
   contracts: {
-    ExampleContract: {
-      chain: "mainnet",
-      abi: ExampleContractAbi,
-      address: "0x0000000000000000000000000000000000000000",
-      startBlock: 1234567,
+    CoinbaseSmartWallet: {
+      abi: CoinbaseSmartWalletAbi,
+      chain: "base",
+      startBlock: 32031000,
+      filter: {
+        event: "AddOwner",
+        args: {},
+      },
     },
   },
 });
