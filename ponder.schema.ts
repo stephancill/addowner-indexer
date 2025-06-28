@@ -7,4 +7,5 @@ export const owners = onchainTable("owners", (t) => ({
   index: t.integer(),
   createdAt: t.timestamp(),
   updatedAt: t.timestamp(),
+  transactionHash: t.hex().notNull(),
 }));

@@ -10,5 +10,6 @@ ponder.on("CoinbaseSmartWallet:AddOwner", async ({ event, context }) => {
     address: event.log.address,
     createdAt: new Date(Number(event.block.timestamp) * 1000),
     updatedAt: new Date(Number(event.block.timestamp) * 1000),
+    transactionHash: event.transaction.hash,
   });
 });
