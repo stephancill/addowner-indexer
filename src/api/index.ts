@@ -1,9 +1,15 @@
 import { db } from "ponder:api";
 import schema from "ponder:schema";
 import { Hono } from "hono";
-import { asc, client, eq, graphql, or } from "ponder";
+import { asc, client, eq, graphql, or, replaceBigInts } from "ponder";
 import { getUserOpsFromTransaction } from "../utils";
-import { createPublicClient, http, PublicClient, type Address } from "viem";
+import {
+  createPublicClient,
+  http,
+  numberToHex,
+  PublicClient,
+  type Address,
+} from "viem";
 import { base } from "viem/chains";
 import { createBundlerClient } from "viem/account-abstraction";
 
@@ -38,59 +44,74 @@ app.get("/events/:address", async (c) => {
   return c.json(events);
 });
 
-app.get("/ops/:address", async (c) => {
+app.get("/replayable-ops/:address", async (c) => {
   const { address } = c.req.param();
 
   const txnHashes = await db
-  .select({
-    transactionHash: schema.owners.transactionHash,
-  })
-  .from(schema.owners)
-  .where(
-      eq(schema.owners.address, address as `0x${string}`)
-  )
-  .orderBy(asc(schema.owners.createdAt));
+    .select({
+      transactionHash: schema.owners.transactionHash,
+      owner: schema.owners.owner,
+      index: schema.owners.index,
+    })
+    .from(schema.owners)
+    .where(eq(schema.owners.address, address as `0x${string}`))
+    .orderBy(asc(schema.owners.createdAt));
 
   if (!txnHashes.length) {
     return c.json([]);
   }
-  
+
   const deployTxHash = txnHashes[0]?.transactionHash;
 
-  const addOwnerUserOps = await Promise.all(
-    txnHashes.map(async ({ transactionHash }) => {
-      const userOps = await getUserOpsFromTransaction({
+  let initCode: `0x${string}` | undefined;
+
+  const replayableAddOwnerBlobs = await Promise.all(
+    txnHashes.map(async ({ transactionHash, owner, index }) => {
+      const userOpBlobs = await getUserOpsFromTransaction({
         transactionHash: transactionHash,
         bundlerClient: baseBundlerClient,
         client: baseClient as PublicClient,
         sender: address as Address,
       });
 
+      // Populate initCode if available
+      userOpBlobs.forEach(({ userOperation }) => {
+        if (userOperation.initCode && userOperation.initCode !== "0x") {
+          initCode = userOperation.initCode;
+        }
+      });
+
       // Replayable userOps have nonce key 8453
-      const replayableUserOp = userOps.find(({ userOperation }) => {
+      const replayableUserOpBlob = userOpBlobs.find(({ userOperation }) => {
         return userOperation.nonce >> BigInt(64) === BigInt(8453);
       });
 
-      if (!replayableUserOp && transactionHash !== deployTxHash) {
+      if (!replayableUserOpBlob && transactionHash !== deployTxHash) {
         throw new Error(
-          `No replayable userOp found for ${transactionHash}`
+          `No replayable userOp found for sender ${address} in ${transactionHash}`
         );
       }
 
-      return replayableUserOp;
+      return { blob: replayableUserOpBlob, owner, ownerIndex: index };
     })
   );
 
-  // TODO: UserOperation is probably not JSON serializable
-  const serializedUserOps = addOwnerUserOps.flatMap((userOp) => {
-    if (!userOp) return []
-    return {
-      transactionHash: userOp.transactionHash,
-      userOperation: userOp.userOperation,
-    };
-  });
+  const serializedUserOps = replayableAddOwnerBlobs.flatMap(
+    ({ blob, owner, ownerIndex }) => {
+      if (!blob) return [];
+      return {
+        owner,
+        ownerIndex,
+        transactionHash: blob.transactionHash,
+        userOperation: replaceBigInts(blob.userOperation, numberToHex),
+      };
+    }
+  );
 
-  return c.json(serializedUserOps);
+  return c.json({
+    initCode,
+    items: serializedUserOps,
+  });
 });
 
 export default app;
